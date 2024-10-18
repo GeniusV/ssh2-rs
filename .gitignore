@@ -2,4 +2,5 @@
 /target/
 libssh2-sys/target/
 /Cargo.lock
-/tests/sshd
+tests/tests/sshd
+.idea/

@@ -5,13 +5,13 @@ use libc::{self, c_char, c_int, c_long, c_uint, c_void};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use std::borrow::Cow;
 use std::ffi::CString;
-use std::ptr::{null, null_mut};
 use std::mem;
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, RawSocket};
 use std::path::Path;
+use std::ptr::{null, null_mut};
 use std::slice;
 use std::str;
 use std::sync::Arc;
@@ -19,6 +19,7 @@ use std::sync::Arc;
 use util;
 use {raw, ByApplication, DisconnectCode, Error, ErrorCode, HostKeyType};
 use {Agent, Channel, HashType, KnownHosts, Listener, MethodType, Sftp};
+use raw::{LIBSSH2_USERAUTH_KBDINT_PROMPT, LIBSSH2_USERAUTH_KBDINT_RESPONSE};
 
 bitflags! {
     /// Flags which can be used with the session trace method to set
@@ -388,20 +389,29 @@ impl Session {
             let _ = catch_unwind(AssertUnwindSafe(|| {
                 let prompter = unsafe { &mut **(abstrakt as *mut *mut P) };
 
-                let username =
-                    unsafe { slice::from_raw_parts(username as *const u8, username_len as usize) };
-                let username = String::from_utf8_lossy(username);
+                let username_b: &[u8] = &[];
+                if username_len > 0 {
+                    let username_b = unsafe { slice::from_raw_parts(username as *const u8, username_len as usize) };
+                }
+                let username = String::from_utf8_lossy(username_b);
 
-                let instruction = unsafe {
-                    slice::from_raw_parts(instruction as *const u8, instruction_len as usize)
+                let instruction_b: &[u8] = &[];
+                if instruction_len > 0 {
+                    let instruction_b = unsafe {
+                        slice::from_raw_parts(instruction as *const u8, instruction_len as usize)
+                    };
+                }
+                let instruction = String::from_utf8_lossy(instruction_b);
+
+                let mut prompts_b: &[LIBSSH2_USERAUTH_KBDINT_PROMPT] = &[];
+                let mut responses_b: &mut [LIBSSH2_USERAUTH_KBDINT_RESPONSE] = &mut [];
+                if num_prompts > 0{
+                    prompts_b = unsafe { slice::from_raw_parts(prompts, num_prompts as usize) };
+                    responses_b =
+                        unsafe { slice::from_raw_parts_mut(responses, num_prompts as usize) };
                 };
-                let instruction = String::from_utf8_lossy(instruction);
 
-                let prompts = unsafe { slice::from_raw_parts(prompts, num_prompts as usize) };
-                let responses =
-                    unsafe { slice::from_raw_parts_mut(responses, num_prompts as usize) };
-
-                let prompts: Vec<Prompt> = prompts
+                let prompts: Vec<Prompt> = prompts_b
                     .iter()
                     .map(|item| {
                         let data = unsafe {
@@ -442,11 +452,11 @@ impl Session {
                 {
                     let ptr = strdup_string(&response);
                     if !ptr.is_null() {
-                        responses[i].length = response.len() as c_uint;
+                        responses_b[i].length = response.len() as c_uint;
                     } else {
-                        responses[i].length = 0;
+                        responses_b[i].length = 0;
                     }
-                    responses[i].text = ptr;
+                    responses_b[i].text = ptr;
                 }
             }));
         }
